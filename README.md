@@ -1,4 +1,4 @@
-# Large Tether Transfer Agent
+# Forta Depeg Event Detection Bot
 
 ## Description
 
