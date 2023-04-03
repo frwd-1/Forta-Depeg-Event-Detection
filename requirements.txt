@@ -1,2 +1,9 @@
 forta_agent>=0.1.14
 setuptools>=61.3.1
+web3~=5.23.0
+aiosqlite==0.17.0
+SQLAlchemy~=1.4.36
+numpy==1.22.4
+pandas==1.4.2
+pystan==2.19.1.1
+prophet==1.0.1
