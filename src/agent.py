@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import json
 import forta_agent
+from tokens import tokens
 from forta_agent import get_json_rpc_url
 from web3 import Web3
 from src.db.db_utils import db_utils
@@ -87,6 +88,14 @@ async def analyze_transaction(transaction_event: forta_agent.transaction_event.T
     # Find swap events in the transaction
     for event in [*transaction_event.filter_log(json.dumps(swap_abi)),
                   *transaction_event.filter_log(json.dumps(swap_v2_abi))]:
+
+        # Check if the pool's tokens match the ones in the tokens_to_monitor list
+        pool = await pools.get_row_by_criteria({'pool_contract': event.address})
+        if pool is not None:
+            token0_address = pool.token0
+            token1_address = pool.token1
+            if not any(token["address"].lower() == token0_address.lower() or token["address"].lower() == token1_address.lower() for token in tokens):
+                continue
 
         # add the pool to the database if we didn't know it yet
         if event.address not in list(known_pools.keys()):
