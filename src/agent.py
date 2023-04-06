@@ -2,7 +2,6 @@ from __future__ import annotations
 import asyncio
 import json
 import forta_agent
-from tokens import tokens
 from forta_agent import get_json_rpc_url
 from web3 import Web3
 from src.db.db_utils import db_utils
@@ -12,6 +11,14 @@ from src.utils import get_protocols_by_chain, extract_argument, get_token_name
 from src.forecaster import forecast
 from src.config import test_mode, history_capacity, minimal_capacity_to_forecast, critical_enable, high_enable, \
     medium_enable, low_enable, debug_logs_enabled
+
+tokens = [
+    {"symbol": "USDC", "address": "<USDC_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
+    {"symbol": "DAI", "address": "<DAI_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
+    {"symbol": "USDT", "address": "<USDT_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
+    {"symbol": "stETH", "address": "<STAKED_ETH_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
+    {"symbol": "WBTC", "address": "<WBTC_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"}
+]
 
 global blocks_counter
 global known_pools
