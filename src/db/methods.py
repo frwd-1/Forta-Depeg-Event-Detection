@@ -23,6 +23,13 @@ class Methods:
         self.__model = model
         self._session = session
 
+    async def get_all_rows_by_criteria(self, criteria: dict, session) -> object or None:
+        query = select(self.__model)
+        for key, value in criteria.items():
+            query = query.where(getattr(self.__model, key) == value)
+        result = await session.execute(query)
+        return result.scalars().all()
+
     @wrap_async
     async def commit(self, session):
         await session.commit()

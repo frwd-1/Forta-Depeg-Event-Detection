@@ -1,7 +1,5 @@
-from sqlalchemy import Column, String, Integer, Boolean, Float, TIMESTAMP
+from sqlalchemy import Column, String, Integer, Float
 from sqlalchemy.ext.declarative import declarative_base
-
-# creates a set of new subclasses including Swaps, Pools, and Future
 
 
 async def wrapped_models(Base: declarative_base):
@@ -15,14 +13,20 @@ async def wrapped_models(Base: declarative_base):
         amount0 = Column(String)
         amount1 = Column(String)
         price = Column(Float)
+        network = Column(String)
+        # Add this line to store the specific asset information
+        asset = Column(String)
 
     class Pools(Base):
         __tablename__ = 'pools'
 
         id = Column(Integer, primary_key=True, autoincrement=True)
-        pool_contract = Column(Integer)
+        pool_contract = Column(String)
         token0 = Column(String)
         token1 = Column(String)
+        network = Column(String)
+        # Add this line to store the specific asset information
+        asset = Column(String)
 
     class Future(Base):
         __tablename__ = 'future'
@@ -32,5 +36,8 @@ async def wrapped_models(Base: declarative_base):
         price = Column(Float)
         price_upper = Column(Float)
         price_lower = Column(Float)
+        network = Column(String)
+        # Add this line to store the specific asset information
+        asset = Column(String)
 
     return Swaps, Pools, Future

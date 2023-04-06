@@ -1,38 +1,115 @@
-from unittest.mock import Mock
-from forta_agent import FindingSeverity, FindingType, create_transaction_event
-from agent import handle_transaction, ERC20_TRANSFER_EVENT, TETHER_ADDRESS, TETHER_DECIMALS
+import eth_abi
 
-mock_tx_event = create_transaction_event({})
-mock_tx_event.filter_log = Mock()
+from forta_agent import FindingSeverity, create_transaction_event, create_block_event
+from web3 import Web3
+from eth_utils import keccak, encode_hex
+
+from src.agent import provide_handle_transaction, provide_handle_block
+from src.utils import get_protocols_by_chain
+
+FREE_ETH_ADDRESS = "0xE0dD882D4dA747e9848D05584e6b42c6320868be"
+protocols = get_protocols_by_chain(1)
+protocols_addresses = list(
+    map(lambda x: Web3.toChecksumAddress(x).lower(), protocols.values()))
+SWAP = "Swap(address,address,int256,int256,uint160,uint128,int24)"
 
 
-class TestHighTetherTransferAgent:
-    def test_returns_empty_findings_if_no_tether_transfers(self):
-        mock_tx_event.filter_log.return_value = []
+def swap_event(amount0, amount1, address_):
+    hash = keccak(text=SWAP)
+    data = eth_abi.encode_abi(["int256", "int256", "uint160", "uint128", "int24"], [
+                              amount0, amount1, 1, 1, 1])
+    data = encode_hex(data)
+    address1 = eth_abi.encode_abi(["address"], [FREE_ETH_ADDRESS])
+    address1 = encode_hex(address1)
+    address2 = eth_abi.encode_abi(["address"], [FREE_ETH_ADDRESS])
+    address2 = encode_hex(address2)
+    topics = [hash, address1, address2]
+    return {'topics': topics,
+            'data': data,
+            'address': address_}
 
-        findings = handle_transaction(mock_tx_event)
 
+class TestSmartPriceChangeAgent:
+
+    def test_returns_zero_finding_if_the_price_change_is_small(self):
+        tx_event = create_transaction_event({
+            'transaction': {
+                'from': FREE_ETH_ADDRESS,
+                'to': FREE_ETH_ADDRESS,
+            },
+            'block': {
+                'number': 14506125,
+                'timestamp': 1648894338,
+            },
+            'logs': [swap_event(2190163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
+
+        block_event = create_block_event({
+            'block': {
+                'number': 14506125,
+                'timestamp': 1648894338,
+            }
+        })
+
+        provide_handle_block()(block_event)
+        findings = provide_handle_transaction()(tx_event)
         assert len(findings) == 0
-        mock_tx_event.filter_log.assert_called_once_with(
-            ERC20_TRANSFER_EVENT, TETHER_ADDRESS)
 
-    def test_returns_finding_if_tether_transfer_over_10k(self):
-        mock_tx_event.filter_log.reset_mock()
-        amount = 20000
-        mock_transfer_event = {
-            'args': {'value': amount * 10**TETHER_DECIMALS, 'from': '0x123', 'to': '0xabc'}}
-        mock_tx_event.filter_log.return_value = [mock_transfer_event]
+    def test_returns_critical_findings_if_the_price_is_very_big(self):
+        tx_event = create_transaction_event({
+            'transaction': {
+                'from': FREE_ETH_ADDRESS,
+                'to': FREE_ETH_ADDRESS,
+            },
+            'block': {
+                'number': 14506125,
+                'timestamp': 1648894338,
+            },
+            'logs': [swap_event(2190163565000, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
 
-        findings = handle_transaction(mock_tx_event)
-
+        findings = provide_handle_transaction()(tx_event)
         assert len(findings) == 1
-        mock_tx_event.filter_log.assert_called_once_with(
-            ERC20_TRANSFER_EVENT, TETHER_ADDRESS)
-        finding = findings[0]
-        assert finding.name == "High Tether Transfer"
-        assert finding.description == f'High amount of USDT transferred: {mock_transfer_event["args"]["value"] / 10**TETHER_DECIMALS}'
-        assert finding.alert_id == "FORTA-1"
-        assert finding.severity == FindingSeverity.Low
-        assert finding.type == FindingType.Info
-        assert finding.metadata['to'] == mock_transfer_event['args']['to']
-        assert finding.metadata['from'] == mock_transfer_event['args']['from']
+        assert findings[0].severity == FindingSeverity.Critical
+
+    def test_returns_critical_findings_if_the_price_is_very_low(self):
+        tx_event = create_transaction_event({
+            'transaction': {
+                'from': FREE_ETH_ADDRESS,
+                'to': FREE_ETH_ADDRESS,
+            },
+            'block': {
+                'number': 14506125,
+                'timestamp': 1648894338,
+            },
+            'logs': [swap_event(1, 2190163565, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
+        findings = provide_handle_transaction()(tx_event)
+        assert len(findings) == 1
+        assert findings[0].severity == FindingSeverity.Critical
+
+        def test_for_price_and_pool_returns_zero_or_one_finding_depending_on_the_seasonality(self):
+            tx_event = create_transaction_event({
+                'transaction': {
+                    'from': FREE_ETH_ADDRESS,
+                    'to': FREE_ETH_ADDRESS,
+                },
+                'block': {
+                    'number': 14506125,
+                    'timestamp': 1648894338,
+                },
+                'logs': [swap_event(2890163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
+
+            findings = provide_handle_transaction()(tx_event)
+            assert len(findings) == 1
+
+            tx_event = create_transaction_event({
+                'transaction': {
+                    'from': FREE_ETH_ADDRESS,
+                    'to': FREE_ETH_ADDRESS,
+                },
+                'block': {
+                    'number': 14506125,
+                    'timestamp': 1648897980,
+                },
+                'logs': [swap_event(2890163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
+
+            findings = provide_handle_transaction()(tx_event)
+        assert len(findings) == 0
