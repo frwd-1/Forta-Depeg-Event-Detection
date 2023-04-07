@@ -13,11 +13,13 @@ from src.config import test_mode, history_capacity, minimal_capacity_to_forecast
     medium_enable, low_enable, debug_logs_enabled
 
 tokens = [
-    {"symbol": "USDC", "address": "<USDC_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
-    {"symbol": "DAI", "address": "<DAI_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
-    {"symbol": "USDT", "address": "<USDT_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
-    {"symbol": "stETH", "address": "<STAKED_ETH_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"},
-    {"symbol": "WBTC", "address": "<WBTC_ADDRESS_ON_AVALANCHE_OR_ETHEREUM>"}
+    # Ethereum
+    {"symbol": "USDC", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},
+    {"symbol": "DAI", "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F"},
+    {"symbol": "USDT", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7"},
+    {"symbol": "stETH", "address": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84"},
+    {"symbol": "WBTC", "address": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"}
+    # Avalanche, Fantom, BSC, Arbitrum, Optimism, Polygon
 ]
 
 global blocks_counter
@@ -55,7 +57,14 @@ async def my_initialize(block_event: forta_agent.block_event.BlockEvent):
 
     # initialize database tables
     swaps_table, pools_table, future_table = await init_async_db(test_mode)
+    print("Swaps table:", swaps_table)
+    print("Pools table:", pools_table)
+    print("Future table:", future_table)
+
     db_utils.set_tables(swaps_table, pools_table, future_table)
+    print("DBUtils swaps:", db_utils.get_swaps())
+    print("DBUtils pools:", db_utils.get_pools())
+    print("DBUtils future:", db_utils.get_future())
 
     # if the database is not empty (in case the agent was restarted) we need to clear the old blocks firstly
     await clean_db(block_event.block_number)

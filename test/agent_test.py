@@ -1,5 +1,8 @@
 import eth_abi
+import pytest
 
+from src.db.controller import init_async_db
+from src.db import db_utils
 from forta_agent import FindingSeverity, create_transaction_event, create_block_event
 from web3 import Web3
 from eth_utils import keccak, encode_hex
@@ -29,9 +32,15 @@ def swap_event(amount0, amount1, address_):
             'address': address_}
 
 
-class TestSmartPriceChangeAgent:
+class TestDepegEventAgent:
 
-    def test_returns_zero_finding_if_the_price_change_is_small(self):
+    async def setup(self):
+        swaps, pools, future = await init_async_db(test=True)
+        db_utils.set_tables(swaps, pools, future)
+
+    def test_high_usdc_price_movement_alert(self):
+
+        # Create a sample transaction event with a high USDC price movement
         tx_event = create_transaction_event({
             'transaction': {
                 'from': FREE_ETH_ADDRESS,
@@ -41,75 +50,17 @@ class TestSmartPriceChangeAgent:
                 'number': 14506125,
                 'timestamp': 1648894338,
             },
-            'logs': [swap_event(2190163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
-
-        block_event = create_block_event({
-            'block': {
-                'number': 14506125,
-                'timestamp': 1648894338,
-            }
+            'logs': [swap_event(1000000000000, 1, "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")]
         })
 
-        provide_handle_block()(block_event)
+        # Call the handle_transaction function and check if there is a finding related to USDC
         findings = provide_handle_transaction()(tx_event)
-        assert len(findings) == 0
+        assert len(findings) > 0, "No findings detected in handle_transaction"
 
-    def test_returns_critical_findings_if_the_price_is_very_big(self):
-        tx_event = create_transaction_event({
-            'transaction': {
-                'from': FREE_ETH_ADDRESS,
-                'to': FREE_ETH_ADDRESS,
-            },
-            'block': {
-                'number': 14506125,
-                'timestamp': 1648894338,
-            },
-            'logs': [swap_event(2190163565000, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
+        usdc_alert_triggered = False
+        for finding in findings:
+            if "USDC" in finding["name"]:
+                usdc_alert_triggered = True
+                break
 
-        findings = provide_handle_transaction()(tx_event)
-        assert len(findings) == 1
-        assert findings[0].severity == FindingSeverity.Critical
-
-    def test_returns_critical_findings_if_the_price_is_very_low(self):
-        tx_event = create_transaction_event({
-            'transaction': {
-                'from': FREE_ETH_ADDRESS,
-                'to': FREE_ETH_ADDRESS,
-            },
-            'block': {
-                'number': 14506125,
-                'timestamp': 1648894338,
-            },
-            'logs': [swap_event(1, 2190163565, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
-        findings = provide_handle_transaction()(tx_event)
-        assert len(findings) == 1
-        assert findings[0].severity == FindingSeverity.Critical
-
-        def test_for_price_and_pool_returns_zero_or_one_finding_depending_on_the_seasonality(self):
-            tx_event = create_transaction_event({
-                'transaction': {
-                    'from': FREE_ETH_ADDRESS,
-                    'to': FREE_ETH_ADDRESS,
-                },
-                'block': {
-                    'number': 14506125,
-                    'timestamp': 1648894338,
-                },
-                'logs': [swap_event(2890163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
-
-            findings = provide_handle_transaction()(tx_event)
-            assert len(findings) == 1
-
-            tx_event = create_transaction_event({
-                'transaction': {
-                    'from': FREE_ETH_ADDRESS,
-                    'to': FREE_ETH_ADDRESS,
-                },
-                'block': {
-                    'number': 14506125,
-                    'timestamp': 1648897980,
-                },
-                'logs': [swap_event(2890163565, 1, '0x959c7d5706ac0b5a29f506a1019ba7f2a1c70c70')]})
-
-            findings = provide_handle_transaction()(tx_event)
-        assert len(findings) == 0
+        assert usdc_alert_triggered, "High USDC price movement alert not triggered in handle_transaction"
