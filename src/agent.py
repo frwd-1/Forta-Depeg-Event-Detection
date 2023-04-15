@@ -12,7 +12,7 @@ from src.forecaster import forecast
 from src.config import test_mode, history_capacity, minimal_capacity_to_forecast, critical_enable, high_enable, \
     medium_enable, low_enable, debug_logs_enabled
 
-tokens = [
+tokens_to_monitor = [
     # Ethereum
     {"symbol": "USDC", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"},
     {"symbol": "DAI", "address": "0x6B175474E89094C44Da98b954EedeAC495271d0F"},
@@ -22,8 +22,54 @@ tokens = [
     # Avalanche, Fantom, BSC, Arbitrum, Optimism, Polygon
 ]
 
+swap_v2_abi = {
+    "anonymous": False,
+    "inputs": [
+        {"indexed": True, "internalType": "address",
+            "name": "sender", "type": "address"},
+        {"indexed": False, "internalType": "uint256",
+            "name": "amount0In", "type": "uint256"},
+        {"indexed": False, "internalType": "uint256",
+            "name": "amount1In", "type": "uint256"},
+        {"indexed": False, "internalType": "uint256",
+            "name": "amount0Out", "type": "uint256"},
+        {"indexed": False, "internalType": "uint256",
+            "name": "amount1Out", "type": "uint256"},
+        {"indexed": True, "internalType": "address",
+            "name": "to", "type": "address"},
+    ],
+    "name": "Swap",
+    "type": "event",
+}
+
+swap_v3_abi = {
+    "anonymous": False,
+    "inputs": [
+        {"indexed": False, "internalType": "int256",
+            "name": "amount0", "type": "int256"},
+        {"indexed": False, "internalType": "int256",
+            "name": "amount1", "type": "int256"},
+        {"indexed": True, "internalType": "address",
+            "name": "sender", "type": "address"},
+        {"indexed": True, "internalType": "address",
+            "name": "recipient", "type": "address"},
+        {"indexed": False, "internalType": "uint160",
+            "name": "sqrtPriceX96After", "type": "uint160"},
+        {"indexed": False, "internalType": "uint128",
+            "name": "liquidity", "type": "uint128"},
+        {"indexed": False, "internalType": "int24",
+            "name": "tick", "type": "int24"},
+    ],
+    "name": "Swap",
+    "type": "event",
+}
+
+
 global blocks_counter
 global known_pools
+
+known_pools = {}
+
 
 initialized = False
 
@@ -100,17 +146,20 @@ async def analyze_transaction(transaction_event: forta_agent.transaction_event.T
     swaps = db_utils.get_swaps()
     pools = db_utils.get_pools()
     future = db_utils.get_future()
+    print(pools)
+    print(swaps)
+    print(future)
 
     # Find swap events in the transaction
-    for event in [*transaction_event.filter_log(json.dumps(swap_abi)),
-                  *transaction_event.filter_log(json.dumps(swap_v2_abi))]:
+    for event in [*transaction_event.filter_log(json.dumps(swap_v2_abi)),
+                  *transaction_event.filter_log(json.dumps(swap_v3_abi))]:
 
         # Check if the pool's tokens match the ones in the tokens_to_monitor list
         pool = await pools.get_row_by_criteria({'pool_contract': event.address})
         if pool is not None:
             token0_address = pool.token0
             token1_address = pool.token1
-            if not any(token["address"].lower() == token0_address.lower() or token["address"].lower() == token1_address.lower() for token in tokens):
+            if not any(token["address"].lower() == token0_address.lower() or token["address"].lower() == token1_address.lower() for token in tokens_to_monitor):
                 continue
 
         # add the pool to the database if we didn't know it yet
@@ -310,8 +359,9 @@ def provide_handle_transaction():
     @return:
     """
 
-    def wrapped_handle_transaction(transaction_event: forta_agent.transaction_event.TransactionEvent) -> list:
-        return [finding for findings in asyncio.run(main(transaction_event)) for finding in findings]
+    async def wrapped_handle_transaction(transaction_event):
+        findings = await main(transaction_event)
+        return [finding for finding_group in findings for finding in finding_group]
 
     return wrapped_handle_transaction
 

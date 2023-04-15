@@ -1,3 +1,6 @@
+from sqlalchemy import Table
+
+
 class DBUtils:
     def __init__(self):
         self.swaps = None
@@ -5,8 +8,6 @@ class DBUtils:
         self.future = None
         self.pools = None
 
-    # getter methods that return the values of the corresponding instance variables
-    # self is a special keyword in python that refers to the instance of the class that is being operated on
     def get_swaps(self):
         return self.swaps
 
@@ -25,10 +26,18 @@ class DBUtils:
         self.base = base
 
     async def get_pool_contracts_by_asset(self, asset: str):
-        # Assuming that 'asset' column is in the 'pools' table
         rows = await self.pools.get_all_rows_by_criteria({'asset': asset})
         pool_contracts = [row['pool_contract'] for row in rows]
         return pool_contracts
+
+    def set_swaps(self, swaps_table: Table):
+        self.swaps = swaps_table
+
+    def set_pools(self, pools_table: Table):
+        self.pools = pools_table
+
+    def set_future(self, future_table: Table):
+        self.future = future_table
 
 
 db_utils = DBUtils()

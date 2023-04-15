@@ -2,7 +2,7 @@ import eth_abi
 import pytest
 
 from src.db.controller import init_async_db
-from src.db import db_utils
+from src.db.db_utils import db_utils
 from forta_agent import FindingSeverity, create_transaction_event, create_block_event
 from web3 import Web3
 from eth_utils import keccak, encode_hex
@@ -32,14 +32,16 @@ def swap_event(amount0, amount1, address_):
             'address': address_}
 
 
-class TestDepegEventAgent:
+@pytest.fixture(scope="module")
+async def init_db():
+    swaps, pools, future = await init_async_db(test=True)
+    db_utils.set_tables(swaps, pools, future)
+    yield swaps, pools, future
 
-    async def setup(self):
-        swaps, pools, future = await init_async_db(test=True)
-        db_utils.set_tables(swaps, pools, future)
 
-    def test_high_usdc_price_movement_alert(self):
-
+@pytest.mark.asyncio
+async def test_high_usdc_price_movement_alert(init_db):
+    async for _ in init_db:
         # Create a sample transaction event with a high USDC price movement
         tx_event = create_transaction_event({
             'transaction': {
@@ -54,13 +56,14 @@ class TestDepegEventAgent:
         })
 
         # Call the handle_transaction function and check if there is a finding related to USDC
-        findings = provide_handle_transaction()(tx_event)
-        assert len(findings) > 0, "No findings detected in handle_transaction"
+        print(tx_event)
+        findings = await provide_handle_transaction()(tx_event)
+    assert len(findings) > 0, "No findings detected in handle_transaction"
 
-        usdc_alert_triggered = False
-        for finding in findings:
-            if "USDC" in finding["name"]:
-                usdc_alert_triggered = True
-                break
+    usdc_alert_triggered = False
+    for finding in findings:
+        if "USDC" in finding["name"]:
+            usdc_alert_triggered = True
+            break
 
-        assert usdc_alert_triggered, "High USDC price movement alert not triggered in handle_transaction"
+    assert usdc_alert_triggered, "High USDC price movement alert not triggered in handle_transaction"
