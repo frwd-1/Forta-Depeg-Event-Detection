@@ -30,7 +30,7 @@ def initialize():
         columns={'timestamp': 'ds', 'price': 'y'})
 
     # Train the Prophet model
-    model = Prophet()
+    model = Prophet(yearly_seasonality=True)
     model.fit(historical_data)
 
     # Make predictions
