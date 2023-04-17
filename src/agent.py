@@ -5,6 +5,14 @@ from forta_agent import Finding, FindingType, FindingSeverity
 from datetime import datetime, timedelta
 
 # Constants
+TRANSFER_EVENTS = {
+    'USDC': '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}]}',
+    'Tether': '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}]}',
+    'DAI': '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"src","type":"address"},{"indexed":true,"name":"dst","type":"address"},{"indexed":false,"name":"wad","type":"uint256"}]}',
+    'stakedETH': '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}]}',
+    'WBTC': '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}]}',
+}
+
 ASSETS = {
     'usdc': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
     'tether': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
@@ -106,10 +114,10 @@ def fetch_pool_data(asset_address):
         return None
 
 
-def analyze_usdc_depeg(events):
+def analyze_asset_depeg(asset, events):
     global historical_data, model, forecast
 
-    # Create a DataFrame from the USDC transfer events
+    # Create a DataFrame from the asset transfer events
     event_data = []
     for event in events:
         timestamp = datetime.fromtimestamp(event['block']['timestamp'])
@@ -118,17 +126,17 @@ def analyze_usdc_depeg(events):
     df = pd.DataFrame(event_data)
 
     # Append the historical data
-    combined_data = historical_data.append(df)
+    combined_data = historical_data[asset].append(df)
 
     # Train a time series model using Prophet
-    model.fit(combined_data)
+    model[asset].fit(combined_data)
 
     # Predict the future price
-    future = model.make_future_dataframe(periods=1)
-    forecast = model.predict(future)
+    future = model[asset].make_future_dataframe(periods=1)
+    forecast[asset] = model[asset].predict(future)
 
     # Check if the predicted price is within the DEPEG_THRESHOLD
-    last_row = forecast.iloc[-1]
+    last_row = forecast[asset].iloc[-1]
     predicted_price = last_row['yhat']
     lower_bound = last_row['yhat_lower']
     upper_bound = last_row['yhat_upper']
@@ -142,20 +150,25 @@ def analyze_usdc_depeg(events):
 def handle_transaction(transaction_event):
     findings = []
 
-    # Filter the transaction logs for any USDC transfers
-    usdc_transfer_events = transaction_event.filter_log(
-        USDC_TRANSFER_EVENT, USDC_ADDRESS)
+    # Loop through each asset and analyze for depeg events
+    for asset in ASSETS:
+        # Filter the transaction logs for asset transfers
+        asset_transfer_event_abi = TRANSFER_EVENTS[asset]
+        asset_address = ASSETS[asset]['address']
+        asset_transfer_events = transaction_event.filter_log(
+            asset_transfer_event_abi, asset_address)
 
-    # Analyze the USDC transfers for depeg events
-    depeg_detected, predicted_price = analyze_usdc_depeg(usdc_transfer_events)
+        # Analyze the asset transfers for depeg events
+        depeg_detected, predicted_price = analyze_asset_depeg(
+            asset, asset_transfer_events)
 
-    if depeg_detected:
-        findings.append(Finding({
-            'name': 'USDC Depeg Event',
-            'description': f'USDC depeg detected with a predicted price of {predicted_price}',
-            'alert_id': 'FORTA-USDC-DEPEG-1',
-            'severity': FindingSeverity.Medium,
-            'type': FindingType.Info
-        }))
+        if depeg_detected:
+            findings.append(Finding({
+                'name': f'{asset} Depeg Event',
+                'description': f'{asset} depeg detected with a predicted price of {predicted_price}',
+                'alert_id': f'FORTA-{asset}-DEPEG-1',
+                'severity': FindingSeverity.Medium,
+                'type': FindingType.Info
+            }))
 
     return findings
