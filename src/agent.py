@@ -5,8 +5,14 @@ from forta_agent import Finding, FindingType, FindingSeverity
 from datetime import datetime, timedelta
 
 # Constants
-USDC_TRANSFER_EVENT = '{"name":"Transfer","type":"event","anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}]}'
-USDC_ADDRESS = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+ASSETS = {
+    'usdc': '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    'tether': '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+    'dai': '0x6B175474E89094C44Da98b954EedeAC495271d0F',
+    'staked_eth': '0x00',  # Replace with actual staked ETH derivatives contract address
+    'wbtc': '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599'
+}
+
 DEPEG_THRESHOLD = 0.01
 PRICE_HISTORY_DAYS = 30
 
@@ -20,40 +26,84 @@ forecast = None
 def initialize():
     global historical_data, model, forecast
 
-    # Fetch historical USDC price data
-    days = 30
-    historical_data = fetch_usdc_price_history(days)
+    # Fetch historical price data for each asset
+    for asset in ASSETS:
+        historical_data[asset] = fetch_asset_price_history(
+            ASSETS[asset], PRICE_HISTORY_DAYS)
 
-    # Prepare the data for Prophet
-    historical_data.reset_index(inplace=True)
-    historical_data = historical_data.rename(
-        columns={'timestamp': 'ds', 'price': 'y'})
+    # Initialize dictionaries to store models and forecasts for each asset
+    model = {}
+    forecast = {}
 
-    # Train the Prophet model
-    model = Prophet(yearly_seasonality=True)
-    model.fit(historical_data)
+    # Train the Prophet model for each asset and make predictions
+    for asset in ASSETS:
+        # Prepare the data for Prophet
+        data = historical_data[asset].reset_index().rename(
+            columns={'timestamp': 'ds', 'price': 'y'})
 
-    # Make predictions
-    future = model.make_future_dataframe(periods=1, freq='H')
-    forecast = model.predict(future)
+        # Train the Prophet model
+        model[asset] = Prophet(yearly_seasonality=True)
+        model[asset].fit(data)
+
+        # Make predictions
+        future = model[asset].make_future_dataframe(periods=1, freq='H')
+        forecast[asset] = model[asset].predict(future)
 
 
-def fetch_usdc_price_history(days):
+def fetch_asset_price_history(asset_address, days):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
 
-    usdc_data = cg.get_coin_market_chart_range_by_id(
-        id='usd-coin',
+    asset_data = cg.get_coin_market_chart_range_by_contract_address(
+        id='ethereum',
+        contract_address=asset_address,
         vs_currency='usd',
         from_timestamp=int(start_date.timestamp()),
         to_timestamp=int(end_date.timestamp())
     )
 
-    price_data = usdc_data['prices']
+    price_data = asset_data['prices']
     df = pd.DataFrame(price_data, columns=['timestamp', 'price'])
     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
     df.set_index('timestamp', inplace=True)
     return df
+
+
+def fetch_pool_data(asset_address):
+    uniswap_base_url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2"
+    query = """
+    {{
+      pairs(first: 1, where: {{token0: "{asset_address}"}}) {{
+        id
+        token0 {{
+          symbol
+          name
+        }}
+        token1 {{
+          symbol
+          name
+        }}
+        reserve0
+        reserve1
+        reserveUSD
+        totalSupply
+        trackedReserveETH
+        token0Price
+        token1Price
+        volumeToken0
+        volumeToken1
+        volumeUSD
+      }}
+    }}
+    """.format(asset_address=asset_address)
+
+    response = requests.post(uniswap_base_url, json={'query': query})
+    data = response.json()
+
+    if 'data' in data and 'pairs' in data['data']:
+        return data['data']['pairs'][0]
+    else:
+        return None
 
 
 def analyze_usdc_depeg(events):
