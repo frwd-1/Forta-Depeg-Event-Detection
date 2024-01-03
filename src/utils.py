@@ -1,68 +1,51 @@
-# from pycoingecko import CoinGeckoAPI
-# import pandas as pd
-# import requests
+from src.config import ETHER_protocols, POLYGON_protocols, AVALANCHE_protocols, known_contracts
 
-# cg = CoinGeckoAPI()
 
-# def fetch_asset_price_history(asset_address, days):
+def extract_argument(event: dict, argument: str) -> any:
+    """
+    the function extract specified argument from the event
+    :param event: dict
+    :param argument: str
+    :return: argument value
+    """
+    return event.get('args', {}).get(argument, "")
 
-#     # Get the coin ID using the contract address
-#     coin_id = get_coin_id_by_contract_address(asset_address)
 
-#     if coin_id is None:
-#         raise ValueError(f"Unable to find coin with contract address {asset_address}")
+def get_protocols_by_chain(chain_id):
+    if chain_id == 1:
+        return ETHER_protocols
+    elif chain_id == 137:
+        return POLYGON_protocols
+    elif chain_id == 43114:
+        return AVALANCHE_protocols
 
-#     asset_data = cg.get_coin_market_chart_by_id(
-#         id=coin_id,
-#         vs_currency='usd',
-#         days=days
-#     )
 
-#     price_data = asset_data['prices']
-#     df = pd.DataFrame(price_data, columns=['timestamp', 'price'])
-#     df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-#     df.set_index('timestamp', inplace=True)
-#     return df
+def get_key_by_value(my_dict: dict, value):
+    try:
+        return list(my_dict.keys())[[x.lower() for x in my_dict.values()].index(value)]
+    except Exception as _:
+        return "Unknown Protocol"
 
-# def get_coin_id_by_contract_address(contract_address):
-#     coins = cg.get_coins_list()
-#     for coin in coins:
-#         if coin.get('contract_address') == contract_address.lower():
-#             return coin['id']
-#     return None
 
-# def fetch_pool_data(asset_address):
-#     uniswap_base_url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v2"
-#     query = """
-#     {{
-#       pairs(first: 1, where: {{token0: "{asset_address}"}}) {{
-#         id
-#         token0 {{
-#           symbol
-#           name
-#         }}
-#         token1 {{
-#           symbol
-#           name
-#         }}
-#         reserve0
-#         reserve1
-#         reserveUSD
-#         totalSupply
-#         trackedReserveETH
-#         token0Price
-#         token1Price
-#         volumeToken0
-#         volumeToken1
-#         volumeUSD
-#       }}
-#     }}
-#     """.format(asset_address=asset_address)
+def get_full_info(object_inst):
+    values = vars(object_inst)
+    values['block'] = vars(values['block'])
+    values['logs'] = [vars(log) for log in values['logs']]
+    values['traces'] = [vars(trace) for trace in values['traces']]
+    values['transaction'] = vars(values['transaction'])
 
-#     response = requests.post(uniswap_base_url, json={'query': query})
-#     data = response.json()
+    return values
 
-#     if 'data' in data and 'pairs' in data['data']:
-#         return data['data']['pairs'][0]
-#     else:
-#         return None
+
+def get_token_name(contract, abi, web3):
+    token_contract = web3.eth.contract(address=contract, abi=abi)
+    try:
+        name = token_contract.functions.name().call()
+    except Exception as _:
+        name = contract
+        for known_contract in list(known_contracts.keys()):
+            if known_contract == contract:
+                name = known_contracts.get(contract, contract)
+                break
+
+    return name
